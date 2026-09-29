@@ -195,6 +195,19 @@ The gateway auth middleware performs prefix-based lookup, timing-safe full-key h
 
 See [docs/gateway-api-key-auth.md](./docs/gateway-api-key-auth.md) for the full flow, attached request fields, and failure responses.
 
+## Gateway Proxy Pipeline (`/v1/call`)
+
+The `/v1/call/:apiSlugOrId/*` reverse proxy pipeline coordinates request routing, authentication, rate limiting, header sanitization, circuit-breaker-protected upstream execution, response streaming, and post-response usage metering.
+
+Key pipeline behaviors:
+- **Header Stripping**: Strips hop-by-hop headers (RFC 7230 §6.1) and sensitive internal headers (`x-api-key`, `authorization`, `cookie`, `host`, `x-forwarded-for`, `x-real-ip`).
+- **Endpoint Pricing**: Resolves price via longest prefix match against configured endpoint paths, falling back to wildcard (`*`) or free (`$0`).
+- **Billing Timing & Conditions**: Charges occur strictly **post-response** after streaming completes cleanly (`res.once('finish')`). Only HTTP `2xx` responses are billed; `3xx`, `4xx`, and `5xx` responses, as well as aborted client sockets, are unbilled.
+- **Resilience**: Features configurable timeouts, automatic retries for safe methods (`GET`, `HEAD`, `OPTIONS`), and per-API circuit breakers.
+
+See [docs/gateway-proxy.md](./docs/gateway-proxy.md) for the complete architecture, header stripping policy, pricing resolution rules, error status codes, and billing conditions.
+
+
 ## API Registration
 
 Authenticated developers can register a marketplace API by calling `POST /api/apis` with:
@@ -435,8 +448,9 @@ Application errors are returned through the shared Express `errorHandler` using 
 - `details` is included for validation failures and contains field paths such as `body.endpoints[0].path` or `query.network`.
 
 For the `POST /api/billing/deduct` idempotency contract, response envelope, and retry guidance for SDK authors, see [docs/sdk/billing-deduct.md](./docs/sdk/billing-deduct.md).  
-For the complete gateway/proxy and billing error-code reference, including `502`/`504` derivation and Soroban billing mappings, see [docs/error-codes.md](./docs/error-codes.md).
-For request-id validation, AsyncLocalStorage propagation, structured logging, and outbound `X-Request-Id` forwarding, see [docs/request-id-propagation.md](./docs/request-id-propagation.md).
+For the complete gateway/proxy and billing error-code reference, including `502`/`504` derivation and Soroban billing mappings, see [docs/error-codes.md](./docs/error-codes.md).  
+For request-id validation, AsyncLocalStorage propagation, structured logging, and outbound `X-Request-Id` forwarding, see [docs/request-id-propagation.md](./docs/request-id-propagation.md).  
+For the `/v1/call` gateway proxy pipeline architecture, header stripping policy, and billing conditions, see [docs/gateway-proxy.md](./docs/gateway-proxy.md).
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
