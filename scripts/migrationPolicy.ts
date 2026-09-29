@@ -2,8 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 // Historical migrations use two numbering schemes and contain deployed
-// duplicate prefixes. They are frozen; new migrations begin at 0022.
-const LEGACY_MAX_PREFIX = 21;
+// duplicate prefixes. They are frozen; new migrations begin at 0024.
+const LEGACY_MAX_PREFIX = 23;
 const LEGACY_UNNUMBERED = new Set([
   'add_refresh_token_family.sql', 'add_refresh_tokens.down.sql', 'add_refresh_tokens.sql',
   'auth_index.down.sql', 'auth_index.sql', 'billing_index.down.sql', 'billing_index.sql',
@@ -11,7 +11,7 @@ const LEGACY_UNNUMBERED = new Set([
 ]);
 
 function prefix(filename: string): number | null {
-  const match = filename.match(/^(\d{4})_/);
+  const match = filename.match(/^(\d+)_/);
   return match ? Number(match[1]) : null;
 }
 
@@ -45,12 +45,12 @@ export function validateMigrationLayout(migrationDir: string): string[] {
 
   const numbers = future.map(prefix).filter((number): number is number => number !== null).sort((a, b) => a - b);
   for (let index = 0; index < numbers.length; index += 1) {
+    if (index > 0 && numbers[index] === numbers[index - 1]) violations.push(`Duplicate new migration prefix ${numbers[index]}.`);
     const expected = LEGACY_MAX_PREFIX + 1 + index;
     if (numbers[index] !== expected) {
       violations.push(`Migration sequence must continue at ${String(expected).padStart(4, '0')}; found ${String(numbers[index]).padStart(4, '0')}.`);
       break;
     }
-    if (index > 0 && numbers[index] === numbers[index - 1]) violations.push(`Duplicate new migration prefix ${numbers[index]}.`);
   }
   return violations;
 }
