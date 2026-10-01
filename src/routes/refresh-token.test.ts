@@ -35,7 +35,7 @@ import express from 'express';
 import type { Server } from 'http';
 import jwt from 'jsonwebtoken';
 
-import { createInFlightDrainTracker, createGracefulShutdownHandler } from '../index.js';
+import { createInFlightDrainTracker, createGracefulShutdownHandler } from '../lifecycle/shutdown.js';
 import { createRefreshTokenRouter } from './refresh-token.js';
 import { AuthController } from '../controllers/authController.js';
 import { RefreshTokenService } from '../services/refreshTokenService.js';
@@ -123,6 +123,15 @@ class MockRefreshTokenRepository implements RefreshTokenRepository {
     }
     return n;
   }
+
+  async listRefreshTokens(
+    userId: string,
+    limit: number,
+    _afterCursor?: any,
+  ): Promise<{ tokens: RefreshToken[]; hasMore: boolean }> {
+    const userTokens = Array.from(this.tokens.values()).filter((t) => t.userId === userId);
+    return { tokens: userTokens.slice(0, limit), hasMore: userTokens.length > limit };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,12 +207,14 @@ describe('POST /api/refresh-token — input validation', () => {
 
     expect(res.status).toBe(400);
     // Standard error envelope fields
-    expect(res.body).toHaveProperty('code');
-    expect(res.body).toHaveProperty('message');
+    const err = res.body.error ?? res.body;
+    expect(err).toHaveProperty('code');
+    expect(err).toHaveProperty('message');
     expect(res.body).toHaveProperty('requestId');
     // Zod validation details array
-    expect(Array.isArray(res.body.details)).toBe(true);
-    expect(res.body.details.length).toBeGreaterThan(0);
+    const details = err.details ?? res.body.details;
+    expect(Array.isArray(details)).toBe(true);
+    expect(details.length).toBeGreaterThan(0);
   });
 
   it('returns 400 when body is not JSON', async () => {
@@ -222,7 +233,8 @@ describe('POST /api/refresh-token — input validation', () => {
       .send({ refreshToken: '' });
 
     expect(res.status).toBe(400);
-    expect(Array.isArray(res.body.details)).toBe(true);
+    const details = res.body.error?.details ?? res.body.details;
+    expect(Array.isArray(details)).toBe(true);
   });
 
   it('returns 401 INVALID_REFRESH_TOKEN for a plaintext string (not a JWT)', async () => {
@@ -231,7 +243,7 @@ describe('POST /api/refresh-token — input validation', () => {
       .send({ refreshToken: 'not-a-jwt-at-all' });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('INVALID_REFRESH_TOKEN');
+    expect(res.body.error?.code ?? res.body.code).toBe('INVALID_REFRESH_TOKEN');
   });
 
   it('returns 401 for a JWT signed with the wrong secret', async () => {
@@ -246,7 +258,7 @@ describe('POST /api/refresh-token — input validation', () => {
       .send({ refreshToken: maliciousToken });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('INVALID_REFRESH_TOKEN');
+    expect(res.body.error?.code ?? res.body.code).toBe('INVALID_REFRESH_TOKEN');
   });
 
   it('returns 401 for an access token presented as a refresh token', async () => {
@@ -262,7 +274,7 @@ describe('POST /api/refresh-token — input validation', () => {
       .send({ refreshToken: accessToken });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('INVALID_REFRESH_TOKEN');
+    expect(res.body.error?.code ?? res.body.code).toBe('INVALID_REFRESH_TOKEN');
   });
 
   it('returns 401 when the token ID is not found in the store', async () => {
@@ -278,7 +290,7 @@ describe('POST /api/refresh-token — input validation', () => {
       .send({ refreshToken: orphan });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('INVALID_REFRESH_TOKEN');
+    expect(res.body.error?.code ?? res.body.code).toBe('INVALID_REFRESH_TOKEN');
   });
 });
 
@@ -352,7 +364,7 @@ describe('POST /api/refresh-token — revoked token', () => {
       .send({ refreshToken });
 
     expect(res.status).toBe(401);
-    expect(res.body.code).toBe('REVOKED_TOKEN');
+    expect(res.body.error?.code ?? res.body.code).toBe('REVOKED_TOKEN');
   });
 });
 
@@ -487,3 +499,4 @@ describe('POST /api/refresh-token — graceful shutdown drain', () => {
     expect(closeDatabase).toHaveBeenCalledTimes(1);
   });
 });
+
